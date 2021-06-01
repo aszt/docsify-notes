@@ -1417,3 +1417,175 @@ public void testAggQuery() throws IOException {
 
 }
 ```
+## 10.10 高亮查询
+高亮三要素，默认 em 标签：
+- 高亮字段
+- 前缀
+- 后缀
+
+### 10.10.1 脚本命令
+```java
+GET goods/_search
+{
+  "query": {
+    "match": {
+      "title": "华为"
+    }
+  },
+  "highlight": {
+    "fields": {
+      "title": {
+        "pre_tags": "<aa>",
+        "post_tags": "</aa>"
+      }
+    }
+  }
+}
+```
+
+### 10.10.2 JavaAPI
+```java
+/**
+ * 高亮查询：
+ * 1.设置高亮
+ *      * 高亮字段
+ *      * 前缀
+ *      * 后缀
+ * 2.将高亮了的字段数据，替换原有数据
+ */
+@Test
+public void testHighLightQuery() throws IOException {
+    SearchRequest searchRequest = new SearchRequest("goods");
+    SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+
+    // 1.查询title包含手机的数据
+    MatchQueryBuilder query = QueryBuilders.matchQuery("title", "华为");
+    sourceBuilder.query(query);
+
+    // 设置高亮
+    HighlightBuilder highLightBuild = new HighlightBuilder();
+    // 设置三要素
+    highLightBuild.field("title");
+    highLightBuild.preTags("<aa>");
+    highLightBuild.postTags("</aa>");
+    sourceBuilder.highlighter(highLightBuild);
+
+    searchRequest.source(sourceBuilder);
+    SearchResponse searchResponse = client.search(searchRequest, RequestOptions.DEFAULT);
+    SearchHits searchHits = searchResponse.getHits();
+    // 获取记录数
+    long value = searchHits.getTotalHits().value;
+    System.out.println("总记录数：" + value);
+    SearchHit[] hits = searchHits.getHits();
+    List<Goods> goodsList = new ArrayList<>();
+    for (SearchHit hit : hits) {
+        String sourceAsString = hit.getSourceAsString();
+
+        // 转为java
+        Goods goods = JSON.parseObject(sourceAsString, Goods.class);
+
+        // 获取高量结果，替换goods中的title
+        Map<String, HighlightField> highlightFields = hit.getHighlightFields();
+        HighlightField highlightField = highlightFields.get("title");
+        Text[] fragments = highlightField.getFragments();
+
+        // 替换
+        goods.setTitle(fragments[0].toString());
+
+        goodsList.add(goods);
+    }
+    for (Goods goods : goodsList) {
+        System.out.println(goods);
+    }
+
+}
+```
+
+# 11 重建索引
+随着业务需求的变更，索引的结构可能发生改变
+
+Elasticsearch的索引一旦创建，只允许添加字段，不允许改变字段。因为改变字段，需要重建倒排索引，影响内部缓存结构，性能太低。
+
+那么此时，就需要重建一个新的索引，并将原有索引的数据导入到新索引中。
+
+1. 问题分析
+
+```kibana
+# 1.新建student_index_v1。索引名称必须全部小写
+PUT student_index_v1
+{
+  "mappings": {
+    "properties": {
+      "birthday":{
+        "type": "date"
+      }
+    }
+  }
+}
+
+# 2.添加数据
+PUT student_index_v1/_doc/1
+{
+  "birthday":"1999-11-11"
+}
+
+# 3.业务变更了，需要改变birthday字段的类型为text
+# 修改失败
+PUT student_index_v1/_doc/1
+{
+  "birthday":"1999年11月11日"
+}
+```
+2. 数据拷贝
+
+```kibana
+# 1.创建新的索引 student_index_v2
+# 2.将student_index_v1 数据拷贝到 student_index_v2
+
+PUT student_index_v2
+{
+  "mappings": {
+    "properties": {
+      "birthday":{
+        "type": "text"
+      }
+    }
+  }
+}
+
+# _reindex 拷贝数据
+POST _reindex
+{
+  "source": {
+    "index": "student_index_v1"
+  },
+  "dest": {
+    "index": "student_index_v2"
+  }
+}
+
+GET student_index_v2/_search
+
+PUT student_index_v2/_doc/2
+{
+  "birthday":"1999年11月11日"
+}
+```
+3. 建立别名
+
+思考：现在java代码中操作es，还是使用的student_index_v1老的索引名称
+
+- 改代码（不推荐）
+- 索引别名（推荐）
+
+```kibana
+# 步骤：
+# 0. 先删除student_index_v1
+# 1. 给student_index_v2起个别名 student_index_v1
+
+DELETE student_index_v1
+
+POST student_index_v2/_alias/student_index_v1
+
+GET student_index_v1/_search
+```
