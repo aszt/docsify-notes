@@ -1,6 +1,6 @@
 ![logo](_media/icon.svg)
 
-# aszt的个人MD笔记
+# aszt的个人笔记
 
 > 希望自己能够越学越好，哈哈
 
