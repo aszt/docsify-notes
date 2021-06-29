@@ -1,5 +1,5 @@
 - Java
-  - [测试](/study/Java/README.md)
+  - [JUC](/study/Java/README.md)
 - Bigdata
   - [Bigdata](/study/Bigdata/README.md)
 - 搜索引擎
